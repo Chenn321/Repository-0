@@ -37,21 +37,9 @@ class ConvolutionLayer:
         self.padding = padding
         self.lr = learning_rate
 
-        # 所有卷积参数构成一个3维矩阵， (num_filters, channel, width, height)
-
         self.weights = np.random.randn((self.num_kernels, self.in_channels, self.width, self.height))*0.01
         self.bias = np.zeros(self.num_kernels)
-        # for i in range(self.num_filters):
-        #     self.weights[i,:,:,:] = np.random.normal(loc=0, scale=np.sqrt(1./(self.channel*self.width*self.height)), size=(self.channel, self.width, self.height))
 
-
-    # def zero_padding(self, inputs, padding_size):
-    #     w, h = inputs.shape[0], inputs.shape[1]
-    #     new_w = 2 * padding_size + w
-    #     new_h = 2 * padding_size + h
-    #     out = np.zeros((new_w, new_h))
-    #     out[padding_size:w+padding_size, padding_size:h+padding_size] = inputs
-    #     return out
 
     def forward(self, inputs):
         c, w, h = inputs.shape
@@ -63,7 +51,7 @@ class ConvolutionLayer:
         for i in range(c):
             padding_inputs[c, self.padding : w + self.padding, self.padding : h + self.padding] = inputs
         self.inputs = padding_inputs
-        
+
         w_out = (ww - self.width) // self.stride + 1
         h_out = (hh - self.height) // self.stride + 1
 
@@ -77,44 +65,44 @@ class ConvolutionLayer:
         return outputs
 
     def backward(self, dy):
-
-        C, W, H = self.inputs.shape
         dx = np.zeros(self.inputs.shape)
         dw = np.zeros(self.weights.shape)
         db = np.zeros(self.bias.shape)
 
-        F, W, H = dy.shape
-        for f in range(F):
-            for w in range(W):
-                for h in range(H):
-                    dw[f,:,:,:]+=dy[f,w,h]*self.inputs[:,w:w+self.width,h:h+self.height]
-                    dx[:,w:w+self.width,h:h+self.height]+=dy[f,w,h]*self.weights[f,:,:,:]
+        f, w, h = dy.shape
+        for i in range(f):
+            for j in range(w):
+                for k in range(h):
+                    dw[i,:,:,:] += dy[i,j,k] * self.inputs[:, j: j+self.width, k: k+self.height]
+                    dx[:, j: j+self.width, k: k+self.height] += dy[i,j,k] * self.weights[i,:,:,:]
 
-        for f in range(F):
-            db[f] = np.sum(dy[f, :, :])
+        for i in range(f):
+            db[i] = np.sum(dy[i, :, :])
 
         self.weights -= self.lr * dw
         self.bias -= self.lr * db
+
         return dx
     
 class Flatten:
     def __init__(self):
         pass
+
     def forward(self, inputs):
-        self.C, self.W, self.H = inputs.shape
-        return inputs.reshape(1, self.C*self.W*self.H)
+        self.c, self.w, self.h = inputs.shape
+        return inputs.reshape(1, self.c * self.w * self.h)
+    
     def backward(self, dy):
-        return dy.reshape(self.C, self.W, self.H)
+        return dy.reshape(self.c, self.w, self.h)
     
 def cross_entropy(inputs, labels):
-
     out_num = labels.shape[0]
-    p = np.sum(labels.reshape(1,out_num)*inputs)
+    p = np.sum(labels.reshape(1,out_num) * inputs)
     loss = -np.log(p)
+
     return loss
 
 class MaxPoolingLayer:
-    # A Max Pooling layer .
     def __init__(self, width, height, stride, name):
         self.width = width
         self.height = height
@@ -123,37 +111,40 @@ class MaxPoolingLayer:
 
     def forward(self, inputs):
         self.inputs = inputs
-        C, W, H = inputs.shape
-        new_width = (W - self.width) // self.stride + 1
-        new_height = (H - self.height) // self.stride + 1
-        out = np.zeros((C, new_width, new_height))
-        for c in range(C):
-            for w in range(new_width):
-                for h in range(new_height):
-                    out[c, w, h] = np.max(
-                        self.inputs[c, w * self.stride:w * self.stride + self.width, h * self.stride:h * self.stride + self.height])
+        c, w, h = inputs.shape
+        w_out = (w - self.width) // self.stride + 1
+        h_out = (h - self.height) // self.stride + 1
+        out = np.zeros((c, w_out, h_out))
+
+        for i in range(c):
+            for j in range(w_out):
+                for k in range(h_out):
+                    out[i, j, k] = np.max(
+                        self.inputs[i, j*self.stride: j*self.stride+self.width, k*self.stride: k*self.stride+self.height])
         return out
 
     def backward(self, dy):
-        C, W, H = self.inputs.shape
+        c, w, h = self.inputs.shape
         dx = np.zeros(self.inputs.shape)
 
-        for c in range(C):
-            for w in range(0, W, self.width):
-                for h in range(0, H, self.height):
-                    st = np.argmax(self.inputs[c, w:w + self.width, h:h + self.height])
+        for i in range(c):
+            for j in range(0, w, self.width):
+                for k in range(0, h, self.height):
+                    st = np.argmax(self.inputs[i, j:j + self.width, k:k + self.height])
                     (idx, idy) = np.unravel_index(st, (self.width, self.height))
-                    dx[c, w + idx, h + idy] = dy[c, w // self.width, h // self.height]
+                    dx[i, j + idx, k + idy] = dy[i, j // self.width, k // self.height]
         return dx
     
 class ReLu:
     def __init__(self):
         pass
+
     def forward(self, inputs):
         self.inputs = inputs
-        ret = inputs.copy()
-        ret[ret < 0] = 0
-        return ret
+        out = inputs.copy()
+        out[out < 0] = 0
+        return out
+    
     def backward(self, dy):
         dx = dy.copy()
         dx[self.inputs < 0] = 0
@@ -162,9 +153,11 @@ class ReLu:
 class Softmax:
     def __init__(self):
         pass
+
     def forward(self, inputs):
         exp = np.exp(inputs, dtype=np.float)
-        self.out = exp/np.sum(exp)
+        self.out = exp / np.sum(exp)
         return self.out
+    
     def backward(self, dy):
-        return self.out.T - dy.reshape(dy.shape[0],1)
+        return self.out.T - dy.reshape(dy.shape[0], 1)
